@@ -8,6 +8,23 @@ local ADDON, ns = ...
 -- All ranks of the Voidwalker's Sacrifice (Classic).
 local SACRIFICE_IDS = { 7812, 19438, 19440, 19441, 19442, 19443 }
 
+-- NPC ID of the Warlock's summoned Voidwalker.
+local VOIDWALKER_NPC_IDS = { [1860] = true }
+
+-- True only when the current pet is the player's Voidwalker (not an Imp,
+-- Felhunter, Succubus, enslaved demon, etc.).
+local function PetIsVoidwalker()
+    if not UnitExists("pet") then return false end
+    local guid = UnitGUID("pet")
+    if guid and not ns.IsSecret(guid) then
+        local npcID = tonumber((select(6, strsplit("-", guid))))
+        if npcID and VOIDWALKER_NPC_IDS[npcID] then return true end
+    end
+    local family = UnitCreatureFamily("pet")
+    if family and not ns.IsSecret(family) and family == "Voidwalker" then return true end
+    return false
+end
+
 ns.RegisterAlert({
     key = "sacrifice",
     name = "Voidwalker Sacrifice",
@@ -23,7 +40,8 @@ ns.RegisterAlert({
     },
 
     check = function(s)
-        if not UnitExists("pet") then return false end
+        -- Only for your summoned Voidwalker, and only once it has learned Sacrifice.
+        if not PetIsVoidwalker() then return false end
         local dead = UnitIsDead("pet")
         if not ns.IsSecret(dead) and dead then return false end
         if not ns.PetHasSpell(SACRIFICE_IDS) then return false end
