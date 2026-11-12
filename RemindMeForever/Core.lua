@@ -614,33 +614,46 @@ function ns.StyleIconText(icon, size)
     icon.text:SetWidth(size + 4)
 end
 
+-- Cooldown Manager artwork (modern clients). If the game doesn't have these
+-- atlases we fall back to a plain thin dark outline.
+local CDM_MASK_ATLAS = "UI-HUD-CoolDownManager-Mask"
+local CDM_OVERLAY_ATLAS = "UI-HUD-CoolDownManager-IconOverlay"
+local function AtlasExists(name)
+    return C_Texture and C_Texture.GetAtlasInfo and C_Texture.GetAtlasInfo(name) ~= nil
+end
+
 local function CreateIcon(alert)
     local f = CreateFrame("Frame", nil, UIParent)
     f:SetFrameStrata("HIGH")
     f:EnableMouse(false) -- never eats clicks
     f:Hide()
 
-    -- The outer frame's alpha is driven by the alert (it may be a secret value
-    -- the game computes for us); the inner frame does the pulsing.
-    local inner = CreateFrame("Frame", nil, f)
-    inner:SetAllPoints()
-    inner:EnableMouse(false)
-    f.inner = inner
-    local outer = f
-    f = inner
-
     f.tex = f:CreateTexture(nil, "ARTWORK")
     f.tex:SetAllPoints()
-    f.tex:SetTexCoord(0.07, 0.93, 0.07, 0.93)
 
-    f.border = f:CreateTexture(nil, "BACKGROUND")
-    f.border:SetPoint("TOPLEFT", -3, 3)
-    f.border:SetPoint("BOTTOMRIGHT", 3, -3)
-    f.border:SetColorTexture(1, 0.1, 0.1, 0.6)
+    if AtlasExists(CDM_MASK_ATLAS) and AtlasExists(CDM_OVERLAY_ATLAS) and f.CreateMaskTexture then
+        -- Same shape and frame as the Cooldown Manager icons.
+        local mask = f:CreateMaskTexture()
+        mask:SetAtlas(CDM_MASK_ATLAS)
+        mask:SetAllPoints(f.tex)
+        f.tex:AddMaskTexture(mask)
+        f.overlay = f:CreateTexture(nil, "OVERLAY")
+        f.overlay:SetAtlas(CDM_OVERLAY_ATLAS)
+        f.overlay:SetAllPoints()
+    else
+        -- Fallback: cropped icon with a 1px dark outline.
+        f.tex:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+        f.border = f:CreateTexture(nil, "BACKGROUND")
+        f.border:SetPoint("TOPLEFT", -1, 1)
+        f.border:SetPoint("BOTTOMRIGHT", 1, -1)
+        f.border:SetColorTexture(0, 0, 0, 1)
+    end
 
-    f.hotkey = f:CreateFontString(nil, "OVERLAY")
-    f.hotkey:SetPoint("TOPRIGHT", f, "TOPRIGHT", -2, -3)
-    f.hotkey:SetTextColor(0.9, 0.9, 0.9)
+    -- Keybind in the top-left corner, like the Cooldown Manager.
+    f.hotkey = f:CreateFontString(nil, "OVERLAY", nil, 7)
+    f.hotkey:SetPoint("TOPLEFT", f, "TOPLEFT", 3, -3)
+    f.hotkey:SetJustifyH("LEFT")
+    f.hotkey:SetTextColor(1, 1, 1)
 
     -- Short label under the icon, clipped to the icon's width so labels on
     -- neighbouring icons never overlap.
@@ -650,19 +663,10 @@ local function CreateIcon(alert)
     f.text:SetJustifyH("CENTER")
     f.text:SetTextColor(1, 1, 1)
 
-    local ag = f:CreateAnimationGroup()
-    ag:SetLooping("BOUNCE")
-    local fade = ag:CreateAnimation("Alpha")
-    fade:SetFromAlpha(1)
-    fade:SetToAlpha(0.45)
-    fade:SetDuration(0.4)
-    f.pulse = ag
-
-    outer:SetSize(currentSize, currentSize)
-    outer.tex, outer.hotkey, outer.text, outer.pulse = f.tex, f.hotkey, f.text, f.pulse
-    ns.StyleIconText(outer, currentSize)
-    alert.icon = outer
-    return outer
+    f:SetSize(currentSize, currentSize)
+    ns.StyleIconText(f, currentSize)
+    alert.icon = f
+    return f
 end
 
 -- Re-checks every alert and lays out the visible icons left-to-right.
@@ -710,12 +714,10 @@ local function Evaluate()
             icon:SetPoint("LEFT", anchor, "LEFT", shown * (size + gap), 0)
             if not icon:IsShown() then
                 icon:Show()
-                icon.pulse:Play()
             end
             shown = shown + 1
         else
             if icon:IsShown() then
-                icon.pulse:Stop()
                 icon:Hide()
             end
         end
