@@ -144,6 +144,42 @@ end
 ---------------------------------------------------------------------------
 local MAX_ACTION_SLOT = 180
 
+-- Action bar API: old globals on Classic, C_ActionBar on modern clients.
+local function ActionAPI(name)
+    return _G[name] or (C_ActionBar and C_ActionBar[name])
+end
+local function A_GetActionInfo(slot)
+    local f = ActionAPI("GetActionInfo")
+    if not f then return nil end
+    local ok, a, b, c = pcall(f, slot)
+    if ok then return a, b, c end
+end
+local function A_HasAction(slot)
+    local f = ActionAPI("HasAction")
+    if f then
+        local ok, r = pcall(f, slot)
+        if ok then return r end
+    end
+    return A_GetActionInfo(slot) ~= nil
+end
+local function A_GetActionTexture(slot)
+    local f = ActionAPI("GetActionTexture")
+    if not f then return nil end
+    local ok, t = pcall(f, slot)
+    if ok then return t end
+end
+ns.A_GetActionInfo, ns.A_HasAction, ns.A_GetActionTexture = A_GetActionInfo, A_HasAction, A_GetActionTexture
+function ns.ActionAPIStatus()
+    local function where(name)
+        if _G[name] then return "global" end
+        if C_ActionBar and C_ActionBar[name] then return "C_ActionBar" end
+        return "MISSING"
+    end
+    return ("HasAction=%s GetActionInfo=%s GetActionTexture=%s GetMacroSpell=%s"):format(
+        where("HasAction"), where("GetActionInfo"), where("GetActionTexture"),
+        GetMacroSpell and "global" or "MISSING")
+end
+
 local function SpellMatches(spellID, ids, wantName)
     if type(spellID) ~= "number" or ns.IsSecret(spellID) then return false end
     if ids[spellID] then return true end
@@ -155,8 +191,8 @@ end
 --   classic clients: GetActionInfo returns ("macro", <macro index>)
 -- and, as a last resort, a macro whose icon is the spell's icon (#showtooltip).
 local function ActionMatches(slot, ids, wantName, icons)
-    if not HasAction(slot) then return false end
-    local kind, id, subType = GetActionInfo(slot)
+    if not A_HasAction(slot) then return false end
+    local kind, id, subType = A_GetActionInfo(slot)
     if kind == "spell" then
         return SpellMatches(id, ids, wantName)
     elseif kind == "macro" then
@@ -166,7 +202,7 @@ local function ActionMatches(slot, ids, wantName, icons)
             if ok and SpellMatches(spellID, ids, wantName) then return true end
         end
         if icons then
-            local tex = GetActionTexture(slot)
+            local tex = A_GetActionTexture(slot)
             if tex and not ns.IsSecret(tex) and icons[tex] then return true end
         end
     end
@@ -232,6 +268,12 @@ local function ButtonHotkeyText(btn)
         local t = hk:GetText()
         if t and not ns.IsSecret(t) and t ~= "" and t ~= RANGE_DOT then return t end
     end
+end
+
+local function ButtonHasHotkeyRegion(btn)
+    if btn.HotKey or btn.hotKey or btn.Hotkey then return true end
+    local name = btn:GetName()
+    return name ~= nil and _G[name .. "HotKey"] ~= nil
 end
 
 local function ButtonBindingKey(btn)
@@ -314,7 +356,7 @@ function ns.SpellButtonInfo(spellIDs)
         local kind, value = ButtonAction(btn)
         local match = false
         if kind == "action" then
-            match = HasAction and ActionMatches(value, ids, wantName, icons)
+            match = ActionMatches(value, ids, wantName, icons)
         elseif kind == "spell" then
             match = isOurSpell(value)
         elseif kind == "macro" then
@@ -325,6 +367,14 @@ function ns.SpellButtonInfo(spellIDs)
             end
         elseif kind == "pet" then
             match = petSlot ~= nil and value == petSlot
+        end
+        -- Fallback: an action-style button (it has a keybind label) showing
+        -- the spell's icon, e.g. a macro using #showtooltip.
+        if not match and kind ~= "pet" then
+            local bt = ButtonTexture(btn)
+            if bt and not ns.IsSecret(bt) and icons[bt] and ButtonHasHotkeyRegion(btn) then
+                match = true
+            end
         end
         if not match then return false end
         tex = tex or ButtonTexture(btn) or (kind == "pet" and petTex) or nil
@@ -338,10 +388,10 @@ function ns.SpellButtonInfo(spellIDs)
     end)
 
     -- 2) Action slots on bars that aren't visible (binding lookup only).
-    if not key and GetActionInfo and HasAction then
+    if not key and ActionAPI("GetActionInfo") then
         for slot = 1, MAX_ACTION_SLOT do
             if ActionMatches(slot, ids, wantName, icons) then
-                tex = tex or GetActionTexture(slot)
+                tex = tex or A_GetActionTexture(slot)
                 key = ns.ActionSlotHotkey(slot)
                 if key then break end
             end
@@ -358,6 +408,53 @@ function ns.SpellButtonInfo(spellIDs)
     -- yet, so look again in a few seconds.
     buttonCache[spellIDs] = { tex = tex, key = key, retryAt = GetTime() + 5 }
     return tex, key
+end
+
+-- /rmf debug: print what the addon sees for these spells.
+function ns.DebugSpellButtons(label, spellIDs)
+    local P = ns.Print
+    local ids = {}
+    for _, id in ipairs(spellIDs) do ids[id] = true end
+    local wantName, wantIcon = ns.SpellNameAndIcon(spellIDs[1])
+    local icons = SpellIcons(spellIDs)
+    P(("|cffffff00%s|r: spell %s name=%s icon=%s"):format(label, tostring(spellIDs[1]), tostring(wantName), tostring(wantIcon)))
+    local found = 0
+    for slot = 1, MAX_ACTION_SLOT do
+        if A_HasAction(slot) then
+            local kind, id, subType = A_GetActionInfo(slot)
+            local tex = A_GetActionTexture(slot)
+            local macroSpell
+            if kind == "macro" and GetMacroSpell then
+                local ok, sid = pcall(GetMacroSpell, id)
+                macroSpell = ok and sid or "err"
+            end
+            local hit = ActionMatches(slot, ids, wantName, icons)
+            if hit or (tex and icons[tex]) or (kind == "macro") then
+                found = found + 1
+                if found <= 12 then
+                    P(("  slot %d: %s id=%s sub=%s macroSpell=%s tex=%s match=%s key=%s"):format(
+                        slot, tostring(kind), tostring(id), tostring(subType), tostring(macroSpell),
+                        tostring(tex), tostring(hit), tostring((ns.ActionSlotHotkey(slot)))))
+                end
+            end
+        end
+    end
+    if found == 0 then P("  no action slots with this spell or any macro") end
+    local shown = 0
+    ForEachVisibleButton(function(btn)
+        local bt = ButtonTexture(btn)
+        if bt and icons[bt] and shown < 6 then
+            shown = shown + 1
+            local kind, value = ButtonAction(btn)
+            P(("  button %s: kind=%s value=%s hotkey=%s binding=%s"):format(
+                tostring(btn:GetName()), tostring(kind), tostring(value),
+                tostring((ButtonHotkeyText(btn))), tostring((ButtonBindingKey(btn)))))
+        end
+    end)
+    if shown == 0 then P("  no visible button shows this spell's icon") end
+    buttonCache[spellIDs] = nil
+    local tex, key = ns.SpellButtonInfo(spellIDs)
+    P(("  result: key=%s tex=%s"):format(tostring(key), tostring(tex)))
 end
 
 local BUTTON_EVENTS = {
@@ -824,6 +921,13 @@ SlashCmdList.REMINDMEFOREVER = function(msg)
         local show = OnOff(rest, not db.minimap.hide)
         if ns.SetMinimapShown then ns.SetMinimapShown(show) end
         Print("minimap button " .. (show and "shown" or "hidden") .. ".")
+    elseif cmd == "debug" then
+        Print(ns.ActionAPIStatus())
+        for _, alert in ipairs(ns.alerts) do
+            if alert.buttonSpells and (not alert.class or alert.class == ns.playerClass) then
+                ns.DebugSpellButtons(alert.name, alert.buttonSpells(db.alerts[alert.key]))
+            end
+        end
     elseif cmd == "reset" then
         ns.ResetLayout()
         Print("position and size reset.")

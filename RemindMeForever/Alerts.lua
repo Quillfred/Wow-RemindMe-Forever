@@ -68,6 +68,7 @@ ns.RegisterAlert({
     display = function(s)
         return ns.SpellButtonInfo(SACRIFICE_IDS)
     end,
+    buttonSpells = function() return SACRIFICE_IDS end,
 
     describe = function(s)
         return ("shows at %d%% pet HP or less"):format(s.threshold)
@@ -204,6 +205,8 @@ ns.RegisterAlert({
         return true, noShards and "0 shards" or nil
     end,
 
+    buttonSpells = function(s) return (PetToShow(s) or PET_BY_VALUE.imp).ids end,
+
     display = function(s)
         local pet = PetToShow(s) or PET_BY_VALUE.imp
         local tex, key = ns.SpellButtonInfo(pet.ids)
@@ -294,6 +297,7 @@ ns.RegisterAlert({
     display = function(s)
         return ns.SpellButtonInfo(DRAIN_SOUL_IDS)
     end,
+    buttonSpells = function() return DRAIN_SOUL_IDS end,
 
     describe = function(s)
         return "in combat with 0 Soul Shards, on a target that gives a shard"

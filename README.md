@@ -31,6 +31,7 @@ Minimap button: left-click = options, right-click = test mode on/off, drag = mov
 - `minimap on|off`: show or hide the minimap button
 - `reset`: reset position and size
 - `list`: list alerts and their settings
+- `debug`: print what the addon sees on your bars (for keybind problems)
 - `sacrifice <1-99> | on | off`: Voidwalker HP % that shows Sacrifice
 
 ## Adding alerts
