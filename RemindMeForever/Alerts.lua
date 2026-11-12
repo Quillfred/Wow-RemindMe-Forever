@@ -20,7 +20,7 @@ local function PetIsVoidwalker()
         local npcID = tonumber((select(6, strsplit("-", guid))))
         if npcID and VOIDWALKER_NPC_IDS[npcID] then return true end
     end
-    local family = UnitCreatureFamily("pet")
+    local family = UnitCreatureFamily and UnitCreatureFamily("pet")
     if family and not ns.IsSecret(family) and family == "Voidwalker" then return true end
     return false
 end
@@ -119,7 +119,7 @@ local function PetToShow(s)
     local chosen = PET_BY_VALUE[GetChosenPet(s) or ""]
     if not chosen then return nil end
     local imp = PET_BY_VALUE.imp
-    if (GetItemCount(SOUL_SHARD_ITEM) or 0) == 0 then return imp, true end
+    if ns.GetItemCount(SOUL_SHARD_ITEM) == 0 then return imp, true end
     if ns.PlayerKnowsSpell(chosen.ids) then return chosen, false end
     return imp, false
 end

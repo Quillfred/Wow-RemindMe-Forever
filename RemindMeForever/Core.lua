@@ -39,6 +39,47 @@ local function CopyDefaults(src, dst)
 end
 
 ---------------------------------------------------------------------------
+-- Compatibility: this client mixes Classic and modern APIs, and some old
+-- globals have moved into C_ namespaces. Always go through these helpers.
+---------------------------------------------------------------------------
+function ns.GetItemCount(itemID)
+    if C_Item and C_Item.GetItemCount then
+        local ok, n = pcall(C_Item.GetItemCount, itemID)
+        if ok and n then return n end
+    end
+    if GetItemCount then
+        local ok, n = pcall(GetItemCount, itemID)
+        if ok and n then return n end
+    end
+    return 0
+end
+
+-- Does the player (or with isPet, the current pet) know this spell?
+function ns.IsSpellKnown(spellID, isPet)
+    local banks = Enum and Enum.SpellBookSpellBank
+    if C_SpellBook and C_SpellBook.IsSpellKnown then
+        local bank = banks and (isPet and banks.Pet or banks.Player)
+        local ok, known = pcall(C_SpellBook.IsSpellKnown, spellID, bank)
+        if ok and known then return true end
+    end
+    if IsSpellKnown then
+        local ok, known = pcall(IsSpellKnown, spellID, isPet and true or false)
+        if ok and known then return true end
+    end
+    if not isPet then
+        if IsPlayerSpell then
+            local ok, known = pcall(IsPlayerSpell, spellID)
+            if ok and known then return true end
+        end
+        if C_SpellBook and C_SpellBook.IsSpellInSpellBook then
+            local ok, known = pcall(C_SpellBook.IsSpellInSpellBook, spellID)
+            if ok and known then return true end
+        end
+    end
+    return false
+end
+
+---------------------------------------------------------------------------
 -- Spell helpers (work on both old GetSpellInfo and newer C_Spell APIs)
 ---------------------------------------------------------------------------
 function ns.SpellNameAndIcon(spellID)
@@ -297,7 +338,7 @@ local BUTTON_EVENTS = {
 -- True if the player knows any of the given spell IDs.
 function ns.PlayerKnowsSpell(spellIDs)
     for _, id in ipairs(spellIDs) do
-        if (IsPlayerSpell and IsPlayerSpell(id)) or (IsSpellKnown and IsSpellKnown(id)) then
+        if ns.IsSpellKnown(id, false) then
             return true
         end
     end
@@ -312,10 +353,8 @@ end
 -- True if the current pet has the given spell (any of the listed rank IDs).
 function ns.PetHasSpell(spellIDs)
     if not UnitExists("pet") then return false end
-    if IsSpellKnown then
-        for _, id in ipairs(spellIDs) do
-            if IsSpellKnown(id, true) then return true end
-        end
+    for _, id in ipairs(spellIDs) do
+        if ns.IsSpellKnown(id, true) then return true end
     end
     -- Fallback: look for the spell on the pet action bar.
     return ns.FindPetActionSlot(spellIDs) ~= nil
