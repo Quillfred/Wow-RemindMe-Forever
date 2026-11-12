@@ -104,19 +104,34 @@ local function PetExistsInGame(pet)
 end
 
 -- The chosen pet is saved per character, since each Warlock knows different pets.
--- nil   = never chosen: the Imp is picked automatically once it's learned.
--- false = the player unchecked everything: reminder off, no auto-pick.
+-- Automatic defaults until the player picks something themselves:
+--   * once Summon Imp is learned, the Imp is checked;
+--   * once Summon Voidwalker is learned, it switches to the Voidwalker (once).
+-- After that, or as soon as the player changes the selection (including
+-- unchecking everything, which turns the reminder off), it's all manual.
 local function GetChosenPet(s)
     s.chosen = s.chosen or {}
+    s.manual = s.manual or {}
     local key = ns.CharacterKey()
-    if s.chosen[key] == nil and ns.PlayerKnowsSpell(PET_BY_VALUE.imp.ids) then
-        s.chosen[key] = "imp"
+    local cur = s.chosen[key]
+    if not s.manual[key] then
+        if cur ~= nil and cur ~= "imp" then
+            s.manual[key] = true -- chosen by hand in an earlier version
+        elseif ns.PlayerKnowsSpell(PET_BY_VALUE.voidwalker.ids) then
+            s.chosen[key] = "voidwalker"
+            s.manual[key] = true
+        elseif cur == nil and ns.PlayerKnowsSpell(PET_BY_VALUE.imp.ids) then
+            s.chosen[key] = "imp"
+        end
     end
     return s.chosen[key] or nil
 end
 local function SetChosenPet(s, value)
     s.chosen = s.chosen or {}
-    s.chosen[ns.CharacterKey()] = value or false
+    s.manual = s.manual or {}
+    local key = ns.CharacterKey()
+    s.chosen[key] = value or false
+    s.manual[key] = true
 end
 
 -- Which pet to show right now: the Imp when out of Soul Shards (it's the only
