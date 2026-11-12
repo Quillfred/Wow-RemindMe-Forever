@@ -109,10 +109,62 @@ function ns.PetHasSpell(spellIDs)
     return ns.FindPetActionSlot(spellIDs) ~= nil
 end
 
+-- Secret values: in combat the game hides some numbers (like health) from addons.
+-- Addons may not compare or do math on them, only hand them to widgets.
+function ns.IsSecret(v)
+    return issecretvalue ~= nil and issecretvalue(v) == true
+end
+
+-- Health % (0-100) as a plain number, or nil if the game is hiding it right now.
 function ns.UnitHealthPercent(unit)
-    local max = UnitHealthMax(unit)
+    local cur, max = UnitHealth(unit), UnitHealthMax(unit)
+    if ns.IsSecret(cur) or ns.IsSecret(max) then return nil end
     if not max or max <= 0 then return nil end
-    return UnitHealth(unit) / max * 100
+    return cur / max * 100
+end
+
+-- A curve that maps health fraction (0-1) to alpha: 1 at or below pct%, 0 above.
+local thresholdCurves = {}
+function ns.ThresholdAlphaCurve(pct)
+    if not (C_CurveUtil and C_CurveUtil.CreateCurve) then return nil end
+    local curve = thresholdCurves[pct]
+    if not curve then
+        curve = C_CurveUtil.CreateCurve()
+        if Enum and Enum.LuaCurveType and Enum.LuaCurveType.Linear then
+            curve:SetType(Enum.LuaCurveType.Linear)
+        end
+        local x = pct / 100
+        curve:AddPoint(0, 1)
+        curve:AddPoint(x, 1)
+        curve:AddPoint(x + 0.001, 0)
+        curve:AddPoint(1, 0)
+        thresholdCurves[pct] = curve
+    end
+    return curve
+end
+
+-- Secret-safe low-health check. Returns:
+--   "plain", pct          when health is readable (pct may be nil if unknown)
+--   "curve", alpha, text  when hidden: alpha (usually secret) is 1 below the threshold
+--                          and 0 above, text is a secret "NN%" string or nil
+function ns.LowHealthState(unit, threshold)
+    local pct = ns.UnitHealthPercent(unit)
+    if pct then return "plain", pct end
+    if not UnitHealthPercent then return "plain", nil end
+    local curve = ns.ThresholdAlphaCurve(threshold)
+    if not curve then return "plain", nil end
+    local ok, alpha = pcall(UnitHealthPercent, unit, false, curve)
+    if not ok or alpha == nil then return "plain", nil end
+    local text
+    local scale = CurveConstants and CurveConstants.ScaleTo100
+    if scale then
+        local ok2, p = pcall(UnitHealthPercent, unit, false, scale)
+        if ok2 and p ~= nil then
+            local ok3, t = pcall(string.format, "%d%%", p)
+            if ok3 then text = t end
+        end
+    end
+    return "curve", alpha, text
 end
 
 ---------------------------------------------------------------------------
@@ -145,7 +197,7 @@ local function CooldownManagerIconSize()
         if viewer and viewer.GetChildren then
             for _, child in ipairs({ viewer:GetChildren() }) do
                 local w = child.Icon and child:GetWidth()
-                if w and w > 1 then
+                if w and not ns.IsSecret(w) and w > 1 then
                     return math.floor(w * child:GetEffectiveScale() / parentScale + 0.5)
                 end
             end
@@ -172,7 +224,7 @@ local function ApplyLayout()
     for _, alert in ipairs(ns.alerts) do
         if alert.icon then
             alert.icon:SetSize(size, size)
-            alert.icon.hotkey:SetFont(STANDARD_TEXT_FONT, math.max(10, math.floor(size * 0.28)), "OUTLINE")
+            alert.icon.inner.hotkey:SetFont(STANDARD_TEXT_FONT, math.max(10, math.floor(size * 0.28)), "OUTLINE")
         end
     end
 end
@@ -182,6 +234,15 @@ local function CreateIcon(alert)
     f:SetFrameStrata("HIGH")
     f:EnableMouse(false) -- never eats clicks
     f:Hide()
+
+    -- The outer frame's alpha is driven by the alert (it may be a secret value
+    -- the game computes for us); the inner frame does the pulsing.
+    local inner = CreateFrame("Frame", nil, f)
+    inner:SetAllPoints()
+    inner:EnableMouse(false)
+    f.inner = inner
+    local outer = f
+    f = inner
 
     f.tex = f:CreateTexture(nil, "ARTWORK")
     f.tex:SetAllPoints()
@@ -199,7 +260,6 @@ local function CreateIcon(alert)
 
     f.text = f:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     f.text:SetPoint("TOP", f, "BOTTOM", 0, -4)
-    f:SetSize(currentSize, currentSize)
 
     local ag = f:CreateAnimationGroup()
     ag:SetLooping("BOUNCE")
@@ -209,8 +269,10 @@ local function CreateIcon(alert)
     fade:SetDuration(0.4)
     f.pulse = ag
 
-    alert.icon = f
-    return f
+    outer:SetSize(currentSize, currentSize)
+    outer.tex, outer.hotkey, outer.text, outer.pulse = f.tex, f.hotkey, f.text, f.pulse
+    alert.icon = outer
+    return outer
 end
 
 local function PlayAlertSound()
@@ -231,12 +293,17 @@ local function Evaluate()
 
     for _, alert in ipairs(ns.alerts) do
         local settings = db.alerts[alert.key]
-        local active, label = false, nil
+        -- check() returns: active, label, alpha. alpha may be a secret value
+        -- (game-hidden); the icon is then kept "armed" and the game decides
+        -- whether it is visible. We can't play a sound in that case.
+        local active, label, alpha = false, nil, nil
         if testing then
             active, label = true, alert.name
         elseif settings.enabled and (not alert.class or alert.class == ns.playerClass) then
-            active, label = alert.check(settings)
+            active, label, alpha = alert.check(settings)
         end
+        local secret = alpha ~= nil and ns.IsSecret(alpha)
+        if active and alpha ~= nil and not secret and alpha <= 0 then active = false end
 
         local icon = alert.icon or CreateIcon(alert)
         if active then
@@ -248,18 +315,29 @@ local function Evaluate()
             end
             icon.tex:SetTexture(tex or alert.iconTexture or 134400) -- 134400 = question mark
             icon.hotkey:SetText(hotkey or "")
-            icon.text:SetText(label or "")
+            if not pcall(icon.text.SetText, icon.text, label or "") then icon.text:SetText("") end
+            if secret then
+                if not pcall(icon.SetAlpha, icon, alpha) then icon:SetAlpha(0) end
+            else
+                icon:SetAlpha(1)
+            end
             icon:ClearAllPoints()
             icon:SetPoint("LEFT", anchor, "LEFT", shown * (size + gap), 0)
             if not icon:IsShown() then
                 icon:Show()
                 icon.pulse:Play()
-                if not testing then PlayAlertSound() end
             end
+            -- Sound only when we actually know it just became visible.
+            local known = not secret
+            if known and not icon.knownActive and not testing then PlayAlertSound() end
+            icon.knownActive = known
             shown = shown + 1
-        elseif icon:IsShown() then
-            icon.pulse:Stop()
-            icon:Hide()
+        else
+            icon.knownActive = false
+            if icon:IsShown() then
+                icon.pulse:Stop()
+                icon:Hide()
+            end
         end
     end
 end

@@ -19,11 +19,17 @@ ns.RegisterAlert({
     help = "sacrifice <1-99> | on | off - Voidwalker HP % that shows Sacrifice",
 
     check = function(s)
-        if not UnitExists("pet") or UnitIsDead("pet") then return false end
+        if not UnitExists("pet") then return false end
+        local dead = UnitIsDead("pet")
+        if not ns.IsSecret(dead) and dead then return false end
         if not ns.PetHasSpell(SACRIFICE_IDS) then return false end
-        local pct = ns.UnitHealthPercent("pet")
-        if pct and pct <= s.threshold then
-            return true, ("%d%%"):format(math.floor(pct + 0.5))
+        local mode, value, text = ns.LowHealthState("pet", s.threshold)
+        if mode == "curve" then
+            -- In combat: the game hides pet HP, so let it drive the icon's alpha.
+            return true, text, value
+        end
+        if value and value <= s.threshold then
+            return true, ("%d%%"):format(math.floor(value + 0.5))
         end
         return false
     end,
