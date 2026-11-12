@@ -11,7 +11,7 @@ Copy the `RemindMeForever` folder into `World of Warcraft/_classic_era_/Interfac
 ## Alerts
 | Alert | Shows when | Settings |
 |---|---|---|
-| Voidwalker Sacrifice (Warlock) | Your Voidwalker knows Sacrifice and is at 5% HP or less | `/rmf sacrifice <1-99>`, `/rmf sacrifice on/off` |
+| Voidwalker Sacrifice (Warlock) | Your Voidwalker knows Sacrifice and is at 5% HP or less. Uses the pet bar icon and shows its keybinding | `/rmf sacrifice <1-99>`, `/rmf sacrifice on/off` |
 
 ## Commands (`/rmf` or `/remindme`)
 - `unlock` / `lock`: move the icon position

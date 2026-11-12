@@ -51,6 +51,51 @@ function ns.SpellNameAndIcon(spellID)
     end
 end
 
+-- Finds the given spell (any rank) on the pet action bar.
+-- Returns slot index and the texture the game itself uses for that button.
+function ns.FindPetActionSlot(spellIDs)
+    if not UnitExists("pet") or not GetPetActionInfo then return nil end
+    local ids = {}
+    for _, id in ipairs(spellIDs) do ids[id] = true end
+    local wantName = ns.SpellNameAndIcon(spellIDs[1])
+    for i = 1, (NUM_PET_ACTION_SLOTS or 10) do
+        local r = { GetPetActionInfo(i) }
+        local name = r[1]
+        -- Classic returns (name, texture, isToken, ..., spellID); very old clients
+        -- had (name, subtext, texture, ...). Pick whichever looks like a texture.
+        local tex, spellID
+        if type(r[2]) == "number" or (type(r[2]) == "string" and r[2]:find("[\\/]")) then
+            tex, spellID = r[2], r[7]
+        else
+            tex, spellID = r[3], r[8]
+        end
+        if (spellID and ids[spellID]) or (name and name == wantName) then
+            return i, tex
+        end
+    end
+end
+
+-- Short key text like the action bars show: CTRL-6 -> C6, SHIFT-BUTTON4 -> SM4.
+function ns.ShortKey(key)
+    if not key then return nil end
+    key = key:upper()
+    key = key:gsub("CTRL%-", "C"):gsub("SHIFT%-", "S"):gsub("ALT%-", "A"):gsub("META%-", "M")
+    key = key:gsub("MOUSEWHEELUP", "MWU"):gsub("MOUSEWHEELDOWN", "MWD")
+    key = key:gsub("MIDDLEMOUSE", "M3"):gsub("BUTTON", "M")
+    key = key:gsub("NUMPADPLUS", "N+"):gsub("NUMPADMINUS", "N-"):gsub("NUMPAD", "N")
+    key = key:gsub("SPACE", "Sp"):gsub("CAPSLOCK", "Caps")
+    return key
+end
+
+-- Key bound to pet action bar slot i (Blizzard bars, plus Bartender / ElvUI pet bars).
+function ns.PetSlotHotkey(slot)
+    if not slot or not GetBindingKey then return nil end
+    local key = GetBindingKey("BONUSACTIONBUTTON" .. slot)
+        or GetBindingKey("CLICK BT4PetButton" .. slot .. ":LeftButton")
+        or GetBindingKey("CLICK ElvUI_BarPetButton" .. slot .. ":LeftButton")
+    return ns.ShortKey(key)
+end
+
 -- True if the current pet has the given spell (any of the listed rank IDs).
 function ns.PetHasSpell(spellIDs)
     if not UnitExists("pet") then return false end
@@ -59,14 +104,8 @@ function ns.PetHasSpell(spellIDs)
             if IsSpellKnown(id, true) then return true end
         end
     end
-    -- Fallback: look for the spell by name on the pet action bar.
-    local name = ns.SpellNameAndIcon(spellIDs[1])
-    if name and GetPetActionInfo then
-        for i = 1, (NUM_PET_ACTION_SLOTS or 10) do
-            if GetPetActionInfo(i) == name then return true end
-        end
-    end
-    return false
+    -- Fallback: look for the spell on the pet action bar.
+    return ns.FindPetActionSlot(spellIDs) ~= nil
 end
 
 function ns.UnitHealthPercent(unit)
@@ -103,7 +142,10 @@ local function ApplyLayout()
     local p = db.point
     anchor:SetPoint(p[1], UIParent, p[2], p[3], p[4])
     for _, alert in ipairs(ns.alerts) do
-        if alert.icon then alert.icon:SetSize(size, size) end
+        if alert.icon then
+            alert.icon:SetSize(size, size)
+            alert.icon.hotkey:SetFont(STANDARD_TEXT_FONT, math.max(10, math.floor(size * 0.28)), "OUTLINE")
+        end
     end
 end
 
@@ -122,8 +164,14 @@ local function CreateIcon(alert)
     f.border:SetPoint("BOTTOMRIGHT", 3, -3)
     f.border:SetColorTexture(1, 0.1, 0.1, 0.6)
 
+    f.hotkey = f:CreateFontString(nil, "OVERLAY")
+    f.hotkey:SetPoint("TOPRIGHT", f, "TOPRIGHT", -2, -3)
+    f.hotkey:SetFont(STANDARD_TEXT_FONT, math.max(10, math.floor(db.iconSize * 0.28)), "OUTLINE")
+    f.hotkey:SetTextColor(0.9, 0.9, 0.9)
+
     f.text = f:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     f.text:SetPoint("TOP", f, "BOTTOM", 0, -4)
+    f:SetSize(db.iconSize, db.iconSize)
 
     local ag = f:CreateAnimationGroup()
     ag:SetLooping("BOUNCE")
@@ -162,8 +210,14 @@ local function Evaluate()
 
         local icon = alert.icon or CreateIcon(alert)
         if active then
-            local _, tex = ns.SpellNameAndIcon(alert.iconSpellID)
-            icon.tex:SetTexture(alert.iconTexture or tex or 134400) -- 134400 = question mark
+            local tex, hotkey
+            if alert.display then tex, hotkey = alert.display(settings) end
+            if not tex and alert.iconSpellID then
+                local _
+                _, tex = ns.SpellNameAndIcon(alert.iconSpellID)
+            end
+            icon.tex:SetTexture(tex or alert.iconTexture or 134400) -- 134400 = question mark
+            icon.hotkey:SetText(hotkey or "")
             icon.text:SetText(label or "")
             icon:ClearAllPoints()
             icon:SetPoint("LEFT", anchor, "LEFT", shown * (size + gap), 0)
@@ -198,6 +252,7 @@ end
 --   events = { "UNIT_HEALTH", ... }, unitEvents = { pet = { "UNIT_HEALTH" } },
 --   defaults = { enabled = true, ... },
 --   check = function(settings) return isActive, labelText end,
+--   display = function(settings) return texture, hotkeyText end (optional),
 --   command = function(settings, args) ... end (optional, for /rmf <key> ...)
 -- }
 local eventFrame = CreateFrame("Frame")
