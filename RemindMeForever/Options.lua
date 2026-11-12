@@ -131,8 +131,6 @@ local function Build()
         ns.IsTestMode, ns.SetTestMode)
     _, y = Checkbox(frame, y, "Unlock (drag the icon to move it)",
         ns.IsUnlocked, ns.SetUnlocked)
-    _, y = Checkbox(frame, y, "Play a sound when an icon appears",
-        function() return db.sound end, ns.SetSound)
     _, y = Checkbox(frame, y, "Show minimap button",
         function() return not db.minimap.hide end,
         function(v) if ns.SetMinimapShown then ns.SetMinimapShown(v) end end)

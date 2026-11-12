@@ -11,7 +11,6 @@ local defaults = {
     iconSize = 64,      -- used when not matching the Cooldown Manager
     matchCooldownManager = true,
     minimap = { hide = false, angle = 215 },
-    sound = true,
     alerts = {}, -- per-alert settings, filled from each alert's own defaults
 }
 
@@ -276,12 +275,6 @@ local function CreateIcon(alert)
     return outer
 end
 
-local function PlayAlertSound()
-    if not db.sound then return end
-    local kit = SOUNDKIT and SOUNDKIT.RAID_WARNING
-    if kit then PlaySound(kit, "Master") end
-end
-
 -- Re-checks every alert and lays out the visible icons left-to-right.
 local function Evaluate()
     if not db then return end
@@ -296,7 +289,7 @@ local function Evaluate()
         local settings = db.alerts[alert.key]
         -- check() returns: active, label, alpha. alpha may be a secret value
         -- (game-hidden); the icon is then kept "armed" and the game decides
-        -- whether it is visible. We can't play a sound in that case.
+        -- whether it is visible.
         local active, label, alpha = false, nil, nil
         if testing then
             active, label = true, alert.name
@@ -328,13 +321,8 @@ local function Evaluate()
                 icon:Show()
                 icon.pulse:Play()
             end
-            -- Sound only when we actually know it just became visible.
-            local known = not secret
-            if known and not icon.knownActive and not testing then PlayAlertSound() end
-            icon.knownActive = known
             shown = shown + 1
         else
-            icon.knownActive = false
             if icon:IsShown() then
                 icon.pulse:Stop()
                 icon:Hide()
@@ -392,6 +380,7 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
         if arg1 ~= ADDON then return end
         RemindMeForeverDB = CopyDefaults(defaults, RemindMeForeverDB or {})
         db = RemindMeForeverDB
+        db.sound = nil -- old setting, no longer used
         ns.db = db
         self:UnregisterEvent("ADDON_LOADED")
     elseif event == "PLAYER_LOGIN" then
@@ -438,11 +427,6 @@ function ns.SetTestMode(state)
     Changed()
 end
 
-function ns.SetSound(state)
-    db.sound = state and true or false
-    Changed()
-end
-
 function ns.SetMatchCooldownManager(state)
     db.matchCooldownManager = state and true or false
     ApplyLayout()
@@ -485,7 +469,6 @@ local function Help()
     Print("  test [on|off]  - show every alert icon until turned off")
     Print("  size match     - same size as Cooldown Manager icons (default)")
     Print("  size <16-200>  - fixed icon size")
-    Print("  sound on|off   - play a sound when an icon appears")
     Print("  minimap on|off - show or hide the minimap button")
     Print("  reset          - reset position and size")
     Print("  list           - list alerts and their settings")
@@ -526,9 +509,6 @@ SlashCmdList.REMINDMEFOREVER = function(msg)
         else
             Print("usage: /rmf size <16-200> | match")
         end
-    elseif cmd == "sound" then
-        ns.SetSound(OnOff(rest, db.sound))
-        Print("sound " .. (db.sound and "on" or "off") .. ".")
     elseif cmd == "minimap" then
         local show = OnOff(rest, not db.minimap.hide)
         if ns.SetMinimapShown then ns.SetMinimapShown(show) end

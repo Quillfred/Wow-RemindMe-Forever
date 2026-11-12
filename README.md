@@ -15,7 +15,7 @@ Copy the `RemindMeForever` folder into `World of Warcraft/_classic_era_/Interfac
 
 ## Options
 Click the minimap button (pocket watch) or type `/rmf` to open the options window:
-test mode, unlock/move, sound, minimap button, icon size (or match Cooldown Manager),
+test mode, unlock/move, minimap button, icon size (or match Cooldown Manager),
 reset, and each alert's settings. It is also listed under the game's AddOns options.
 
 Minimap button: left-click = options, right-click = test mode on/off, drag = move.
@@ -26,7 +26,6 @@ Minimap button: left-click = options, right-click = test mode on/off, drag = mov
 - `test [on|off]`: show every alert icon until turned off
 - `size match`: same size as your Cooldown Manager icons (default)
 - `size <16-200>`: fixed icon size instead
-- `sound on|off`: play a sound when an icon appears
 - `minimap on|off`: show or hide the minimap button
 - `reset`: reset position and size
 - `list`: list alerts and their settings
