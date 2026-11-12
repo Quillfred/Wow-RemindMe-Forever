@@ -72,7 +72,8 @@ States:
 - `worn:` / `noworn:` and `equipped:` / `noequipped:` (e.g. `worn:Shields`)
 
 Doubtful: `known` and `spec`. Treat them as not working **(unconfirmed)**.
-Not found anywhere: named-pet checks like `[pet:Voidwalker]`, and `talent`.
+**Named-pet checks like `[pet:Voidwalker]` do NOT work in Forever (confirmed in game 2026-11-12)**;
+only `[pet]`, `[nopet]` and `[@pet]`. `talent` was not found in any source.
 
 Gotchas:
 - Alt is the default Self Cast modifier. `[mod:alt]` macros work, but can clash with self-cast.
@@ -163,6 +164,12 @@ Gotchas:
 /cast [nocombat,mod:shift] Demon Skin; [nocombat] Demon Armor
 ```
 Pet macros:
+```
+#showtooltip
+/cast [nopet] Summon Voidwalker; Sacrifice
+```
+(Confirmed working in game: summons the Voidwalker if no pet is out, otherwise Sacrifice.
+With another demon out, the Sacrifice part just errors.)
 ```
 #showtooltip Sacrifice
 /cast [@pet,exists] Sacrifice
