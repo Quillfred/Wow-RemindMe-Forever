@@ -176,6 +176,32 @@ local function Build()
                     _, y = Slider(frame, y, opt.label, opt.min, opt.max,
                         function() return s[key] end,
                         function(v) ns.SetAlertSetting(alert, key, v) end)
+                elseif opt.type == "radio" then
+                    -- One checkbox per choice; at most one checked. Clicking the
+                    -- checked one clears it. Unavailable choices are greyed out.
+                    if opt.label then
+                        local sub = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+                        sub:SetPoint("TOPLEFT", 30, y - 2)
+                        sub:SetText(opt.label)
+                        y = y - 18
+                    end
+                    for _, choice in ipairs(opt.choices) do
+                        if not choice.exists or choice.exists() then
+                            local cb
+                            cb, y = Checkbox(frame, y, choice.label,
+                                function() return opt.get(s) == choice.value end,
+                                function(v)
+                                    opt.set(s, v and choice.value or nil)
+                                    ns.NotifyChanged()
+                                end)
+                            table.insert(widgets, { refresh = function()
+                                local ok = not choice.available or choice.available()
+                                if ok then cb:Enable() else cb:Disable() end
+                                cb.label:SetText(choice.label .. (ok and "" or "  |cff808080(not learned)|r"))
+                                cb.label:SetFontObject(ok and "GameFontHighlight" or "GameFontDisable")
+                            end })
+                        end
+                    end
                 end
             end
         end

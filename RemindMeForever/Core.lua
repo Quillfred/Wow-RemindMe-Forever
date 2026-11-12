@@ -294,6 +294,21 @@ local BUTTON_EVENTS = {
     PET_BAR_UPDATE = true, UNIT_PET = true, SPELLS_CHANGED = true, PLAYER_ENTERING_WORLD = true,
 }
 
+-- True if the player knows any of the given spell IDs.
+function ns.PlayerKnowsSpell(spellIDs)
+    for _, id in ipairs(spellIDs) do
+        if (IsPlayerSpell and IsPlayerSpell(id)) or (IsSpellKnown and IsSpellKnown(id)) then
+            return true
+        end
+    end
+    return false
+end
+
+-- "Name-Realm" for per-character settings.
+function ns.CharacterKey()
+    return (UnitName("player") or "?") .. "-" .. (GetRealmName() or "?")
+end
+
 -- True if the current pet has the given spell (any of the listed rank IDs).
 function ns.PetHasSpell(spellIDs)
     if not UnitExists("pet") then return false end
@@ -597,6 +612,7 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
         if ns.CreateMinimapButton then ns.CreateMinimapButton() end
         if ns.RegisterSettingsPanel then pcall(ns.RegisterSettingsPanel) end
     else
+        if event == "SPELLS_CHANGED" and ns.RefreshOptions then ns.RefreshOptions() end
         if BUTTON_EVENTS[event] then
             wipe(buttonCache)
             if not self.recheckPending and C_Timer then
@@ -619,6 +635,7 @@ local function Changed()
     Evaluate()
     if ns.RefreshOptions then ns.RefreshOptions() end
 end
+ns.NotifyChanged = Changed
 
 function ns.IsUnlocked() return unlocked end
 function ns.IsTestMode() return testMode end
