@@ -1,0 +1,9 @@
+## Interface: 16001, 16000, 11508, 11507
+## Title: RemindMe Forever
+## Notes: Pops up an icon on screen when something needs your attention (e.g. Voidwalker low HP -> Sacrifice).
+## Author: Quillfred
+## Version: 0.1.0
+## SavedVariables: RemindMeForeverDB
+
+Core.lua
+Alerts.lua
