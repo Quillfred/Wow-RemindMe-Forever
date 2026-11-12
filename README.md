@@ -12,7 +12,7 @@ Copy the `RemindMeForever` folder into `World of Warcraft/_classic_era_/Interfac
 | Alert | Shows when | Settings |
 |---|---|---|
 | Voidwalker Sacrifice (Warlock) | Your summoned Voidwalker (no other pet) has learned Sacrifice and is at 5% HP or less. Uses your own Sacrifice button (any action bar addon, or the pet bar) for the icon and keybind | `/rmf sacrifice <1-99>`, `/rmf sacrifice on/off` |
-| Missing pet (Warlock) | No pet is summoned (not while mounted, on a taxi or dead). Shows the pet you checked in the options, or the Imp when you have no Soul Shards. Uses your summon button's icon and keybind | Options window: pick one learned pet (saved per character) |
+| Missing pet (Warlock) | No pet is summoned (not while mounted, on a taxi or dead). Shows the pet you checked in the options, or the Imp when you have no Soul Shards. Uses your summon button's icon and keybind | Options window: pick one learned pet (saved per character; the Imp is picked automatically once learned) |
 
 ## Options
 Click the minimap button (pocket watch) or type `/rmf` to open the options window:

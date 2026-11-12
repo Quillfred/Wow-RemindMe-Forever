@@ -104,24 +104,37 @@ local function PetExistsInGame(pet)
 end
 
 -- The chosen pet is saved per character, since each Warlock knows different pets.
+-- nil   = never chosen: the Imp is picked automatically once it's learned.
+-- false = the player unchecked everything: reminder off, no auto-pick.
 local function GetChosenPet(s)
     s.chosen = s.chosen or {}
-    return s.chosen[ns.CharacterKey()]
+    local key = ns.CharacterKey()
+    if s.chosen[key] == nil and ns.PlayerKnowsSpell(PET_BY_VALUE.imp.ids) then
+        s.chosen[key] = "imp"
+    end
+    return s.chosen[key] or nil
 end
 local function SetChosenPet(s, value)
     s.chosen = s.chosen or {}
-    s.chosen[ns.CharacterKey()] = value
+    s.chosen[ns.CharacterKey()] = value or false
 end
 
 -- Which pet to show right now: the Imp when out of Soul Shards (it's the only
 -- one that doesn't need a shard), otherwise the checked pet if it's learned.
+-- Returns nil if the right pet can't be summoned (e.g. Imp not learned).
 local function PetToShow(s)
     local chosen = PET_BY_VALUE[GetChosenPet(s) or ""]
     if not chosen then return nil end
     local imp = PET_BY_VALUE.imp
-    if ns.GetItemCount(SOUL_SHARD_ITEM) == 0 then return imp, true end
+    local impKnown = ns.PlayerKnowsSpell(imp.ids)
+    -- Never suggest a pet that can't be summoned.
+    if ns.GetItemCount(SOUL_SHARD_ITEM) == 0 then
+        if impKnown then return imp, true end
+        return nil
+    end
     if ns.PlayerKnowsSpell(chosen.ids) then return chosen, false end
-    return imp, false
+    if impKnown then return imp, false end
+    return nil
 end
 
 local function HasLivePet()
