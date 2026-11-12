@@ -144,18 +144,43 @@ end
 ---------------------------------------------------------------------------
 local MAX_ACTION_SLOT = 180
 
-local function ActionMatches(slot, ids, wantName)
-    if not HasAction(slot) then return false end
-    local kind, id = GetActionInfo(slot)
-    local spellID
-    if kind == "spell" then
-        spellID = id
-    elseif kind == "macro" and GetMacroSpell then
-        spellID = GetMacroSpell(id)
-    end
-    if not spellID then return false end
+local function SpellMatches(spellID, ids, wantName)
+    if type(spellID) ~= "number" or ns.IsSecret(spellID) then return false end
     if ids[spellID] then return true end
     return wantName ~= nil and ns.SpellNameAndIcon(spellID) == wantName
+end
+
+-- Does action slot `slot` cast one of our spells? Handles both macro formats:
+--   modern clients: GetActionInfo returns ("macro", <spell the macro casts now>, "spell")
+--   classic clients: GetActionInfo returns ("macro", <macro index>)
+-- and, as a last resort, a macro whose icon is the spell's icon (#showtooltip).
+local function ActionMatches(slot, ids, wantName, icons)
+    if not HasAction(slot) then return false end
+    local kind, id, subType = GetActionInfo(slot)
+    if kind == "spell" then
+        return SpellMatches(id, ids, wantName)
+    elseif kind == "macro" then
+        if subType ~= "item" and SpellMatches(id, ids, wantName) then return true end
+        if GetMacroSpell then
+            local ok, spellID = pcall(GetMacroSpell, id)
+            if ok and SpellMatches(spellID, ids, wantName) then return true end
+        end
+        if icons then
+            local tex = GetActionTexture(slot)
+            if tex and not ns.IsSecret(tex) and icons[tex] then return true end
+        end
+    end
+    return false
+end
+
+-- Icons of the given spells, for matching macros by icon.
+local function SpellIcons(spellIDs)
+    local icons = {}
+    for _, id in ipairs(spellIDs) do
+        local _, icon = ns.SpellNameAndIcon(id)
+        if icon then icons[icon] = true end
+    end
+    return icons
 end
 
 -- Binding commands that can trigger action slot `slot`: Blizzard bars
@@ -277,8 +302,9 @@ function ns.SpellButtonInfo(spellIDs)
     local ids = {}
     for _, id in ipairs(spellIDs) do ids[id] = true end
     local wantName = ns.SpellNameAndIcon(spellIDs[1])
+    local icons = SpellIcons(spellIDs)
     local function isOurSpell(spellID)
-        return spellID ~= nil and (ids[spellID] or (wantName and ns.SpellNameAndIcon(spellID) == wantName))
+        return SpellMatches(spellID, ids, wantName)
     end
     local petSlot, petTex = ns.FindPetActionSlot(spellIDs)
     local tex, key
@@ -288,11 +314,15 @@ function ns.SpellButtonInfo(spellIDs)
         local kind, value = ButtonAction(btn)
         local match = false
         if kind == "action" then
-            match = HasAction and ActionMatches(value, ids, wantName)
+            match = HasAction and ActionMatches(value, ids, wantName, icons)
         elseif kind == "spell" then
             match = isOurSpell(value)
-        elseif kind == "macro" and GetMacroSpell then
-            match = isOurSpell(GetMacroSpell(value))
+        elseif kind == "macro" then
+            match = isOurSpell(value)
+            if not match and GetMacroSpell then
+                local ok, spellID = pcall(GetMacroSpell, value)
+                match = ok and isOurSpell(spellID) or false
+            end
         elseif kind == "pet" then
             match = petSlot ~= nil and value == petSlot
         end
@@ -310,7 +340,7 @@ function ns.SpellButtonInfo(spellIDs)
     -- 2) Action slots on bars that aren't visible (binding lookup only).
     if not key and GetActionInfo and HasAction then
         for slot = 1, MAX_ACTION_SLOT do
-            if ActionMatches(slot, ids, wantName) then
+            if ActionMatches(slot, ids, wantName, icons) then
                 tex = tex or GetActionTexture(slot)
                 key = ns.ActionSlotHotkey(slot)
                 if key then break end
