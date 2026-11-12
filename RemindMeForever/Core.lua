@@ -97,6 +97,203 @@ function ns.PetSlotHotkey(slot)
     return ns.ShortKey(key)
 end
 
+---------------------------------------------------------------------------
+-- Player action bars: find a spell (placed directly or via a macro) and
+-- read the key bound to that button.
+---------------------------------------------------------------------------
+local MAX_ACTION_SLOT = 180
+
+local function ActionMatches(slot, ids, wantName)
+    if not HasAction(slot) then return false end
+    local kind, id = GetActionInfo(slot)
+    local spellID
+    if kind == "spell" then
+        spellID = id
+    elseif kind == "macro" and GetMacroSpell then
+        spellID = GetMacroSpell(id)
+    end
+    if not spellID then return false end
+    if ids[spellID] then return true end
+    return wantName ~= nil and ns.SpellNameAndIcon(spellID) == wantName
+end
+
+-- Binding commands that can trigger action slot `slot`: Blizzard bars
+-- first, then Bartender4, ElvUI and Dominos.
+local function ActionSlotBindings(slot)
+    local list = {}
+    local function add(cmd) list[#list + 1] = cmd end
+    local n = (slot - 1) % 12 + 1
+    if slot <= 12 then add("ACTIONBUTTON" .. slot)
+    elseif slot <= 24 then -- page 2 of the main bar has no keys of its own
+    elseif slot <= 36 then add("MULTIACTIONBAR3BUTTON" .. n)  -- right bar
+    elseif slot <= 48 then add("MULTIACTIONBAR4BUTTON" .. n)  -- right bar 2
+    elseif slot <= 60 then add("MULTIACTIONBAR2BUTTON" .. n)  -- bottom right
+    elseif slot <= 72 then add("MULTIACTIONBAR1BUTTON" .. n)  -- bottom left
+    elseif slot >= 145 and slot <= 156 then add("MULTIACTIONBAR5BUTTON" .. n)
+    elseif slot >= 157 and slot <= 168 then add("MULTIACTIONBAR6BUTTON" .. n)
+    elseif slot >= 169 and slot <= 180 then add("MULTIACTIONBAR7BUTTON" .. n)
+    end
+    add("CLICK BT4Button" .. slot .. ":Keybind")
+    add("CLICK BT4Button" .. slot .. ":LeftButton")
+    add("ELVUIBAR" .. math.ceil(slot / 12) .. "BUTTON" .. n)
+    add("CLICK DominosActionButton" .. slot .. ":HOTKEY")
+    return list
+end
+
+function ns.ActionSlotHotkey(slot)
+    if not GetBindingKey then return nil end
+    for _, cmd in ipairs(ActionSlotBindings(slot)) do
+        local key = GetBindingKey(cmd)
+        if key then return ns.ShortKey(key) end
+    end
+end
+
+---------------------------------------------------------------------------
+-- Finding the on-screen button for a spell, from any action bar addon
+-- (Blizzard, Bartender4, ElvUI, Dominos, EllesmereUI, ...). Rather than
+-- knowing every addon, we walk all visible buttons, work out what each one
+-- casts, and read the keybind text the button itself displays.
+---------------------------------------------------------------------------
+local RANGE_DOT = RANGE_INDICATOR or "\226\151\143" -- the grey dot shown when unbound
+
+local function ButtonHotkeyText(btn)
+    local hk = btn.HotKey or btn.hotKey or btn.Hotkey
+    if not hk then
+        local name = btn:GetName()
+        hk = name and _G[name .. "HotKey"]
+    end
+    if hk and hk.GetText and hk:IsShown() then
+        local t = hk:GetText()
+        if t and not ns.IsSecret(t) and t ~= "" and t ~= RANGE_DOT then return t end
+    end
+end
+
+local function ButtonBindingKey(btn)
+    if not GetBindingKey then return nil end
+    local name = btn:GetName()
+    if name then
+        for _, suffix in ipairs({ ":LeftButton", ":Keybind", ":HOTKEY", "" }) do
+            local key = GetBindingKey("CLICK " .. name .. suffix)
+            if key then return ns.ShortKey(key) end
+        end
+    end
+    local cmd = btn.commandName or btn.bindingAction or (btn.config and btn.config.keyBoundTarget)
+    if type(cmd) == "string" then
+        local key = GetBindingKey(cmd)
+        if key then return ns.ShortKey(key) end
+    end
+end
+
+-- What a button casts: "action", slot | "spell", spellID | "macro", id | "pet", index
+local function ButtonAction(btn)
+    -- LibActionButton (used by Bartender4, ElvUI and many UI suites)
+    if btn._state_type and btn._state_action then
+        return btn._state_type, btn._state_action
+    end
+    local name = btn:GetName()
+    local petIndex = name and name:match("Pet.-Button(%d+)$")
+    if petIndex then return "pet", tonumber(petIndex) end
+    if type(btn.action) == "number" then return "action", btn.action end
+    local ok, attr = pcall(btn.GetAttribute, btn, "action")
+    if ok and type(attr) == "number" then return "action", attr end
+end
+
+local function ButtonTexture(btn)
+    local icon = btn.icon or btn.Icon
+    if not icon then
+        local name = btn:GetName()
+        icon = name and _G[name .. "Icon"]
+    end
+    return icon and icon.GetTexture and icon:GetTexture()
+end
+
+-- Calls fn(btn) for every visible button on screen; stops when fn returns true.
+local function ForEachVisibleButton(fn)
+    if not EnumerateFrames then return end
+    local f = EnumerateFrames()
+    while f do
+        local ok, stop = pcall(function()
+            local t = f:GetObjectType()
+            if (t == "CheckButton" or t == "Button") and f:IsVisible() then
+                return fn(f)
+            end
+        end)
+        if ok and stop then return end
+        f = EnumerateFrames(f)
+    end
+end
+
+-- Texture and keybind for a spell. A visible button showing a keybind wins;
+-- otherwise fall back to binding lookups by action slot and the pet bar.
+-- Cached until bars or bindings change (see BUTTON_EVENTS below).
+local buttonCache = {}
+function ns.SpellButtonInfo(spellIDs)
+    local cached = buttonCache[spellIDs]
+    if cached and (cached.key or GetTime() < cached.retryAt) then
+        return cached.tex, cached.key
+    end
+
+    local ids = {}
+    for _, id in ipairs(spellIDs) do ids[id] = true end
+    local wantName = ns.SpellNameAndIcon(spellIDs[1])
+    local function isOurSpell(spellID)
+        return spellID ~= nil and (ids[spellID] or (wantName and ns.SpellNameAndIcon(spellID) == wantName))
+    end
+    local petSlot, petTex = ns.FindPetActionSlot(spellIDs)
+    local tex, key
+
+    -- 1) Visible buttons from any bar addon.
+    ForEachVisibleButton(function(btn)
+        local kind, value = ButtonAction(btn)
+        local match = false
+        if kind == "action" then
+            match = HasAction and ActionMatches(value, ids, wantName)
+        elseif kind == "spell" then
+            match = isOurSpell(value)
+        elseif kind == "macro" and GetMacroSpell then
+            match = isOurSpell(GetMacroSpell(value))
+        elseif kind == "pet" then
+            match = petSlot ~= nil and value == petSlot
+        end
+        if not match then return false end
+        tex = tex or ButtonTexture(btn) or (kind == "pet" and petTex) or nil
+        key = ButtonHotkeyText(btn) or ButtonBindingKey(btn)
+            or (kind == "action" and ns.ActionSlotHotkey(value))
+            or (kind == "pet" and ns.PetSlotHotkey(value)) or nil
+        if key then
+            tex = ButtonTexture(btn) or tex
+            return true
+        end
+    end)
+
+    -- 2) Action slots on bars that aren't visible (binding lookup only).
+    if not key and GetActionInfo and HasAction then
+        for slot = 1, MAX_ACTION_SLOT do
+            if ActionMatches(slot, ids, wantName) then
+                tex = tex or GetActionTexture(slot)
+                key = ns.ActionSlotHotkey(slot)
+                if key then break end
+            end
+        end
+    end
+
+    -- 3) The pet bar.
+    if not key and petSlot then
+        tex = tex or petTex
+        key = ns.PetSlotHotkey(petSlot)
+    end
+
+    -- If nothing was found, bar addons may not have drawn their keybinds
+    -- yet, so look again in a few seconds.
+    buttonCache[spellIDs] = { tex = tex, key = key, retryAt = GetTime() + 5 }
+    return tex, key
+end
+
+local BUTTON_EVENTS = {
+    ACTIONBAR_SLOT_CHANGED = true, ACTIONBAR_PAGE_CHANGED = true, UPDATE_BINDINGS = true,
+    PET_BAR_UPDATE = true, UNIT_PET = true, SPELLS_CHANGED = true, PLAYER_ENTERING_WORLD = true,
+}
+
 -- True if the current pet has the given spell (any of the listed rank IDs).
 function ns.PetHasSpell(spellIDs)
     if not UnitExists("pet") then return false end
@@ -387,7 +584,7 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
         ns.playerClass = select(2, UnitClass("player"))
         ApplyLayout()
         SetUnlocked(false)
-        SafeRegister("PLAYER_ENTERING_WORLD")
+        for e in pairs(BUTTON_EVENTS) do SafeRegister(e) end
         for _, alert in ipairs(ns.alerts) do
             if not alert.class or alert.class == ns.playerClass then
                 for _, e in ipairs(alert.events or {}) do SafeRegister(e) end
@@ -400,6 +597,17 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
         if ns.CreateMinimapButton then ns.CreateMinimapButton() end
         if ns.RegisterSettingsPanel then pcall(ns.RegisterSettingsPanel) end
     else
+        if BUTTON_EVENTS[event] then
+            wipe(buttonCache)
+            if not self.recheckPending and C_Timer then
+                self.recheckPending = true
+                C_Timer.After(1, function()
+                    self.recheckPending = false
+                    wipe(buttonCache)
+                    Evaluate()
+                end)
+            end
+        end
         Evaluate()
     end
 end)

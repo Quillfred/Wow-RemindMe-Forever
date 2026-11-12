@@ -11,7 +11,7 @@ Copy the `RemindMeForever` folder into `World of Warcraft/_classic_era_/Interfac
 ## Alerts
 | Alert | Shows when | Settings |
 |---|---|---|
-| Voidwalker Sacrifice (Warlock) | Your summoned Voidwalker (no other pet) has learned Sacrifice and is at 5% HP or less. Uses the pet bar icon and shows its keybinding | `/rmf sacrifice <1-99>`, `/rmf sacrifice on/off` |
+| Voidwalker Sacrifice (Warlock) | Your summoned Voidwalker (no other pet) has learned Sacrifice and is at 5% HP or less. Uses your own Sacrifice button (any action bar addon, or the pet bar) for the icon and keybind | `/rmf sacrifice <1-99>`, `/rmf sacrifice on/off` |
 
 ## Options
 Click the minimap button (pocket watch) or type `/rmf` to open the options window:

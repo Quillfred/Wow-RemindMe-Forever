@@ -31,7 +31,7 @@ ns.RegisterAlert({
     class = "WARLOCK",
     iconSpellID = 7812,
     defaults = { enabled = true, threshold = 5 },
-    events = { "UNIT_PET", "PET_BAR_UPDATE", "SPELLS_CHANGED", "UPDATE_BINDINGS" },
+    events = { "UNIT_PET", "PET_BAR_UPDATE", "SPELLS_CHANGED" },
     unitEvents = { pet = { "UNIT_HEALTH", "UNIT_HEALTH_FREQUENT", "UNIT_MAXHEALTH" } },
     help = "sacrifice <1-99> | on | off - Voidwalker HP % that shows Sacrifice",
     options = {
@@ -56,10 +56,9 @@ ns.RegisterAlert({
         return false
     end,
 
-    -- Use the pet bar's own Sacrifice button: same icon and its keybinding.
+    -- Use your own Sacrifice button (action bar or pet bar): same icon and its keybinding.
     display = function(s)
-        local slot, tex = ns.FindPetActionSlot(SACRIFICE_IDS)
-        return tex, ns.PetSlotHotkey(slot)
+        return ns.SpellButtonInfo(SACRIFICE_IDS)
     end,
 
     describe = function(s)
