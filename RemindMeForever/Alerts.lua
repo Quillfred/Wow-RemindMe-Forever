@@ -212,3 +212,37 @@ ns.RegisterAlert({
         return pet and ("summon " .. pet.label .. " (Imp when out of shards)") or "no pet chosen"
     end,
 })
+
+---------------------------------------------------------------------------
+-- Warlock: out of Soul Shards in combat -> Drain Soul
+---------------------------------------------------------------------------
+-- All ranks of Drain Soul (Classic).
+local DRAIN_SOUL_IDS = { 1120, 8288, 8289, 11675 }
+
+ns.RegisterAlert({
+    key = "drainSoul",
+    name = "Drain Soul (no shards)",
+    class = "WARLOCK",
+    iconSpellID = 1120,
+    defaults = { enabled = true },
+    events = { "PLAYER_REGEN_DISABLED", "PLAYER_REGEN_ENABLED", "BAG_UPDATE",
+               "BAG_UPDATE_DELAYED", "SPELLS_CHANGED" },
+    options = {
+        { type = "toggle", key = "enabled", label = "Suggest Drain Soul in combat when I have no Soul Shards" },
+    },
+
+    check = function(s)
+        if not InCombatLockdown() then return false end
+        if ns.GetItemCount(SOUL_SHARD_ITEM) > 0 then return false end
+        if not ns.PlayerKnowsSpell(DRAIN_SOUL_IDS) then return false end
+        return true, "No shards"
+    end,
+
+    display = function(s)
+        return ns.SpellButtonInfo(DRAIN_SOUL_IDS)
+    end,
+
+    describe = function(s)
+        return "in combat with 0 Soul Shards"
+    end,
+})
