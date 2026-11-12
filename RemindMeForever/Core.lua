@@ -676,6 +676,9 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
         RemindMeForeverDB = CopyDefaults(defaults, RemindMeForeverDB or {})
         db = RemindMeForeverDB
         db.sound = nil -- old setting, no longer used
+        for _, alert in ipairs(ns.alerts) do
+            if alert.migrate then alert.migrate(db.alerts[alert.key]) end
+        end
         ns.db = db
         self:UnregisterEvent("ADDON_LOADED")
     elseif event == "PLAYER_LOGIN" then

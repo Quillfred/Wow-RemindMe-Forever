@@ -31,7 +31,14 @@ ns.RegisterAlert({
     name = "Voidwalker Sacrifice",
     class = "WARLOCK",
     iconSpellID = 7812,
-    defaults = { enabled = true, threshold = 5 },
+    defaults = { enabled = true, threshold = 10 },
+    -- The default used to be 5%; move anyone still on the old default to 10% (once).
+    migrate = function(s)
+        if not s.threshold10 then
+            if s.threshold == 5 then s.threshold = 10 end
+            s.threshold10 = true
+        end
+    end,
     events = { "UNIT_PET", "PET_BAR_UPDATE", "SPELLS_CHANGED" },
     unitEvents = { pet = { "UNIT_HEALTH", "UNIT_HEALTH_FREQUENT", "UNIT_MAXHEALTH" } },
     help = "sacrifice <1-99> | on | off - Voidwalker HP % that shows Sacrifice",
