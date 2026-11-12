@@ -17,6 +17,10 @@ ns.RegisterAlert({
     events = { "UNIT_PET", "PET_BAR_UPDATE", "SPELLS_CHANGED", "UPDATE_BINDINGS" },
     unitEvents = { pet = { "UNIT_HEALTH", "UNIT_HEALTH_FREQUENT", "UNIT_MAXHEALTH" } },
     help = "sacrifice <1-99> | on | off - Voidwalker HP % that shows Sacrifice",
+    options = {
+        { type = "toggle", key = "enabled", label = "Show Sacrifice when my Voidwalker is low" },
+        { type = "slider", key = "threshold", label = "Voidwalker HP %", min = 1, max = 99 },
+    },
 
     check = function(s)
         if not UnitExists("pet") then return false end

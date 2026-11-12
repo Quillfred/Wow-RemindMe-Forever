@@ -10,6 +10,7 @@ local defaults = {
     point = { "CENTER", "CENTER", 0, 150 },
     iconSize = 64,      -- used when not matching the Cooldown Manager
     matchCooldownManager = true,
+    minimap = { hide = false, angle = 215 },
     sound = true,
     alerts = {}, -- per-alert settings, filled from each alert's own defaults
 }
@@ -19,7 +20,7 @@ ns.alertsByKey = {}
 
 local db
 local unlocked = false
-local testUntil = 0
+local testMode = false
 
 local function Print(msg)
     DEFAULT_CHAT_FRAME:AddMessage(PREFIX .. msg)
@@ -285,7 +286,7 @@ end
 local function Evaluate()
     if not db then return end
     local now = GetTime()
-    local testing = unlocked or now < testUntil
+    local testing = unlocked or testMode
     local shown = 0
     if IconSize() ~= currentSize then ApplyLayout() end
     local size = currentSize
@@ -361,6 +362,8 @@ end
 --   defaults = { enabled = true, ... },
 --   check = function(settings) return isActive, labelText end,
 --   display = function(settings) return texture, hotkeyText end (optional),
+--   options = { { type = "toggle"|"slider", key = "settingKey", label = "...",
+--                 min = 1, max = 99 }, ... } (optional, shown in the options window)
 --   command = function(settings, args) ... end (optional, for /rmf <key> ...)
 -- }
 local eventFrame = CreateFrame("Frame")
@@ -389,6 +392,7 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
         if arg1 ~= ADDON then return end
         RemindMeForeverDB = CopyDefaults(defaults, RemindMeForeverDB or {})
         db = RemindMeForeverDB
+        ns.db = db
         self:UnregisterEvent("ADDON_LOADED")
     elseif event == "PLAYER_LOGIN" then
         ns.playerClass = select(2, UnitClass("player"))
@@ -404,21 +408,85 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
             end
         end
         Evaluate()
+        if ns.CreateMinimapButton then ns.CreateMinimapButton() end
+        if ns.RegisterSettingsPanel then pcall(ns.RegisterSettingsPanel) end
     else
         Evaluate()
     end
 end)
 
 ---------------------------------------------------------------------------
+-- Settings API (shared by slash commands and the options window)
+---------------------------------------------------------------------------
+local function Changed()
+    Evaluate()
+    if ns.RefreshOptions then ns.RefreshOptions() end
+end
+
+function ns.IsUnlocked() return unlocked end
+function ns.IsTestMode() return testMode end
+function ns.CurrentIconSize() return currentSize end
+function ns.CooldownManagerFound() return CooldownManagerIconSize() ~= nil end
+
+function ns.SetUnlocked(state)
+    SetUnlocked(state and true or false)
+    Changed()
+end
+
+function ns.SetTestMode(state)
+    testMode = state and true or false
+    Changed()
+end
+
+function ns.SetSound(state)
+    db.sound = state and true or false
+    Changed()
+end
+
+function ns.SetMatchCooldownManager(state)
+    db.matchCooldownManager = state and true or false
+    ApplyLayout()
+    Changed()
+end
+
+function ns.SetIconSize(n)
+    db.iconSize = math.max(16, math.min(200, math.floor(n)))
+    db.matchCooldownManager = false
+    ApplyLayout()
+    Changed()
+end
+
+function ns.SetAlertSetting(alert, key, value)
+    db.alerts[alert.key][key] = value
+    Changed()
+end
+
+function ns.ResetLayout()
+    db.point = { unpack(defaults.point) }
+    db.iconSize = defaults.iconSize
+    db.matchCooldownManager = true
+    ApplyLayout()
+    Changed()
+end
+
+---------------------------------------------------------------------------
 -- Slash commands
 ---------------------------------------------------------------------------
+local function OnOff(rest, current)
+    rest = (rest or ""):lower()
+    if rest == "on" then return true elseif rest == "off" then return false end
+    return not current
+end
+
 local function Help()
     Print("commands (/rmf or /remindme):")
+    Print("  (no command)   - open the options window")
     Print("  unlock | lock  - move the icon position")
-    Print("  test           - show every alert icon for 5 seconds")
+    Print("  test [on|off]  - show every alert icon until turned off")
     Print("  size match     - same size as Cooldown Manager icons (default)")
     Print("  size <16-200>  - fixed icon size")
     Print("  sound on|off   - play a sound when an icon appears")
+    Print("  minimap on|off - show or hide the minimap button")
     Print("  reset          - reset position and size")
     Print("  list           - list alerts and their settings")
     for _, alert in ipairs(ns.alerts) do
@@ -432,49 +500,41 @@ SlashCmdList.REMINDMEFOREVER = function(msg)
     local cmd, rest = (msg or ""):match("^%s*(%S*)%s*(.-)%s*$")
     cmd = (cmd or ""):lower()
 
-    if cmd == "unlock" then
-        SetUnlocked(true)
+    if cmd == "" or cmd == "options" or cmd == "config" then
+        if ns.ToggleOptions then ns.ToggleOptions() else Help() end
+    elseif cmd == "unlock" then
+        ns.SetUnlocked(true)
         Print("unlocked. Drag the blue box, then type /rmf lock.")
     elseif cmd == "lock" then
-        SetUnlocked(false)
+        ns.SetUnlocked(false)
         Print("locked.")
     elseif cmd == "test" then
-        testUntil = GetTime() + 5
-        Evaluate()
-        C_Timer.After(5.1, Evaluate)
+        ns.SetTestMode(OnOff(rest, testMode))
+        Print("test mode " .. (testMode and "on" or "off") .. ".")
     elseif cmd == "size" then
         local n = tonumber(rest)
         if rest:lower() == "match" then
-            db.matchCooldownManager = true
-            ApplyLayout()
-            Evaluate()
-            if CooldownManagerIconSize() then
+            ns.SetMatchCooldownManager(true)
+            if ns.CooldownManagerFound() then
                 Print("matching Cooldown Manager icon size (" .. currentSize .. ").")
             else
                 Print("will match the Cooldown Manager once its icons exist; using " .. currentSize .. " for now.")
             end
         elseif n and n >= 16 and n <= 200 then
-            db.iconSize = math.floor(n)
-            db.matchCooldownManager = false
-            ApplyLayout()
-            Evaluate()
+            ns.SetIconSize(n)
             Print("icon size " .. db.iconSize .. " (no longer matching Cooldown Manager).")
         else
             Print("usage: /rmf size <16-200> | match")
         end
     elseif cmd == "sound" then
-        if rest == "on" or rest == "off" then
-            db.sound = (rest == "on")
-        else
-            db.sound = not db.sound
-        end
+        ns.SetSound(OnOff(rest, db.sound))
         Print("sound " .. (db.sound and "on" or "off") .. ".")
+    elseif cmd == "minimap" then
+        local show = OnOff(rest, not db.minimap.hide)
+        if ns.SetMinimapShown then ns.SetMinimapShown(show) end
+        Print("minimap button " .. (show and "shown" or "hidden") .. ".")
     elseif cmd == "reset" then
-        db.point = { unpack(defaults.point) }
-        db.iconSize = defaults.iconSize
-        db.matchCooldownManager = true
-        ApplyLayout()
-        Evaluate()
+        ns.ResetLayout()
         Print("position and size reset.")
     elseif cmd == "list" then
         for _, alert in ipairs(ns.alerts) do
@@ -485,7 +545,7 @@ SlashCmdList.REMINDMEFOREVER = function(msg)
     elseif ns.alertsByKey[cmd] and ns.alertsByKey[cmd].command then
         local alert = ns.alertsByKey[cmd]
         alert.command(db.alerts[alert.key], rest)
-        Evaluate()
+        Changed()
     else
         Help()
     end
