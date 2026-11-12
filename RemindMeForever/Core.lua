@@ -475,9 +475,16 @@ local function ApplyLayout()
     for _, alert in ipairs(ns.alerts) do
         if alert.icon then
             alert.icon:SetSize(size, size)
-            alert.icon.inner.hotkey:SetFont(STANDARD_TEXT_FONT, math.max(10, math.floor(size * 0.28)), "OUTLINE")
+            ns.StyleIconText(alert.icon, size)
         end
     end
+end
+
+-- Fonts scale with the icon size.
+function ns.StyleIconText(icon, size)
+    icon.hotkey:SetFont(STANDARD_TEXT_FONT, math.max(10, math.floor(size * 0.28)), "OUTLINE")
+    icon.text:SetFont(STANDARD_TEXT_FONT, math.max(9, math.floor(size * 0.24)), "OUTLINE")
+    icon.text:SetWidth(size + 4)
 end
 
 local function CreateIcon(alert)
@@ -506,11 +513,15 @@ local function CreateIcon(alert)
 
     f.hotkey = f:CreateFontString(nil, "OVERLAY")
     f.hotkey:SetPoint("TOPRIGHT", f, "TOPRIGHT", -2, -3)
-    f.hotkey:SetFont(STANDARD_TEXT_FONT, math.max(10, math.floor(currentSize * 0.28)), "OUTLINE")
     f.hotkey:SetTextColor(0.9, 0.9, 0.9)
 
-    f.text = f:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-    f.text:SetPoint("TOP", f, "BOTTOM", 0, -4)
+    -- Short label under the icon, clipped to the icon's width so labels on
+    -- neighbouring icons never overlap.
+    f.text = f:CreateFontString(nil, "OVERLAY")
+    f.text:SetPoint("TOP", f, "BOTTOM", 0, -2)
+    f.text:SetWordWrap(false)
+    f.text:SetJustifyH("CENTER")
+    f.text:SetTextColor(1, 1, 1)
 
     local ag = f:CreateAnimationGroup()
     ag:SetLooping("BOUNCE")
@@ -522,6 +533,7 @@ local function CreateIcon(alert)
 
     outer:SetSize(currentSize, currentSize)
     outer.tex, outer.hotkey, outer.text, outer.pulse = f.tex, f.hotkey, f.text, f.pulse
+    ns.StyleIconText(outer, currentSize)
     alert.icon = outer
     return outer
 end
@@ -543,7 +555,8 @@ local function Evaluate()
         -- whether it is visible.
         local active, label, alpha = false, nil, nil
         if testing then
-            active, label = true, alert.name
+            active = true
+            label = type(alert.testLabel) == "function" and alert.testLabel(settings) or alert.testLabel
         elseif settings.enabled and (not alert.class or alert.class == ns.playerClass) then
             active, label, alpha = alert.check(settings)
         end
@@ -599,7 +612,8 @@ end
 --   iconSpellID = 7812 (or iconTexture = fileID/path),
 --   events = { "UNIT_HEALTH", ... }, unitEvents = { pet = { "UNIT_HEALTH" } },
 --   defaults = { enabled = true, ... },
---   check = function(settings) return isActive, labelText end,
+--   check = function(settings) return isActive, labelText end,  (keep labels short)
+--   testLabel = "text" or function(settings) (optional, label shown in test mode),
 --   display = function(settings) return texture, hotkeyText end (optional),
 --   options = { { type = "toggle"|"slider", key = "settingKey", label = "...",
 --                 min = 1, max = 99 }, ... } (optional, shown in the options window)

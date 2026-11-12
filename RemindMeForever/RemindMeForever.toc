@@ -2,7 +2,7 @@
 ## Title: RemindMe Forever
 ## Notes: Pops up an icon on screen when something needs your attention (e.g. Voidwalker low HP -> Sacrifice).
 ## Author: Quillfred
-## Version: 0.6.0
+## Version: 0.7.0
 ## SavedVariables: RemindMeForeverDB
 
 Core.lua

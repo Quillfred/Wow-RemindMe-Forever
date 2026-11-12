@@ -27,6 +27,7 @@ end
 
 ns.RegisterAlert({
     key = "sacrifice",
+    testLabel = function(s) return s.threshold .. "%" end,
     name = "Voidwalker Sacrifice",
     class = "WARLOCK",
     iconSpellID = 7812,
@@ -192,7 +193,8 @@ ns.RegisterAlert({
         if (IsMounted and IsMounted()) or (UnitOnTaxi and UnitOnTaxi("player")) then return false end
         local pet, noShards = PetToShow(s)
         if not pet then return false end
-        return true, noShards and (pet.label .. " (no shards)") or pet.label
+        -- The icon shows which pet; only explain when it's the Imp for lack of shards.
+        return true, noShards and "0 shards" or nil
     end,
 
     display = function(s)
@@ -219,14 +221,57 @@ ns.RegisterAlert({
 -- All ranks of Drain Soul (Classic).
 local DRAIN_SOUL_IDS = { 1120, 8288, 8289, 11675 }
 
+-- Highest level that is grey (no experience) for a player of level p (Classic rules).
+local function GreyLevel(p)
+    if p <= 5 then return 0 end
+    if p <= 39 then return p - math.floor(p / 10) - 5 end
+    if p <= 59 then return p - math.floor(p / 5) - 1 end
+    return p - 9 -- level 60: 51 and below is grey
+end
+
+-- Drain Soul only gives a shard if the target dies while drained AND the kill
+-- would give experience or honor. Where the game hides a value (secret), we
+-- assume it counts rather than miss a reminder.
+local function TargetGivesShard()
+    if not UnitExists("target") then return false end
+    local function known(v) return not ns.IsSecret(v) end
+
+    local dead = UnitIsDead("target")
+    if known(dead) and dead then return false end
+    local canAttack = UnitCanAttack("player", "target")
+    if known(canAttack) and not canAttack then return false end
+    -- Tagged by someone else: no experience for you.
+    if UnitIsTapDenied then
+        local denied = UnitIsTapDenied("target")
+        if known(denied) and denied then return false end
+    end
+
+    local isPlayer = UnitIsPlayer("target")
+    if known(isPlayer) and not isPlayer then
+        -- Pets, guardians and totems give nothing.
+        local controlled = UnitPlayerControlled("target")
+        if known(controlled) and controlled then return false end
+        local ctype = UnitCreatureType and UnitCreatureType("target")
+        if ctype and known(ctype) and (ctype == "Critter" or ctype == "Totem") then return false end
+    end
+    -- Players count when the kill gives honor, which uses the same grey rule.
+
+    local level, myLevel = UnitLevel("target"), UnitLevel("player")
+    if not known(level) or not known(myLevel) then return true end
+    if level < 0 then return true end -- "??" (far higher level / boss)
+    return level > GreyLevel(myLevel)
+end
+
 ns.RegisterAlert({
     key = "drainSoul",
+    testLabel = "0 shards",
     name = "Drain Soul (no shards)",
     class = "WARLOCK",
     iconSpellID = 1120,
     defaults = { enabled = true },
     events = { "PLAYER_REGEN_DISABLED", "PLAYER_REGEN_ENABLED", "BAG_UPDATE",
-               "BAG_UPDATE_DELAYED", "SPELLS_CHANGED" },
+               "BAG_UPDATE_DELAYED", "SPELLS_CHANGED", "PLAYER_TARGET_CHANGED", "PLAYER_LEVEL_UP" },
+    unitEvents = { target = { "UNIT_HEALTH", "UNIT_FLAGS", "UNIT_LEVEL", "UNIT_FACTION" } },
     options = {
         { type = "toggle", key = "enabled", label = "Suggest Drain Soul in combat when I have no Soul Shards" },
     },
@@ -235,7 +280,8 @@ ns.RegisterAlert({
         if not InCombatLockdown() then return false end
         if ns.GetItemCount(SOUL_SHARD_ITEM) > 0 then return false end
         if not ns.PlayerKnowsSpell(DRAIN_SOUL_IDS) then return false end
-        return true, "No shards"
+        if not TargetGivesShard() then return false end
+        return true, "0 shards"
     end,
 
     display = function(s)
@@ -243,6 +289,6 @@ ns.RegisterAlert({
     end,
 
     describe = function(s)
-        return "in combat with 0 Soul Shards"
+        return "in combat with 0 Soul Shards, on a target that gives a shard"
     end,
 })
