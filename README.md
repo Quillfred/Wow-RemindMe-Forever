@@ -16,7 +16,8 @@ Copy the `RemindMeForever` folder into `World of Warcraft/_classic_era_/Interfac
 ## Commands (`/rmf` or `/remindme`)
 - `unlock` / `lock`: move the icon position
 - `test`: show every alert icon for 5 seconds
-- `size <24-200>`: icon size
+- `size match`: same size as your Cooldown Manager icons (default)
+- `size <16-200>`: fixed icon size instead
 - `sound on|off`: play a sound when an icon appears
 - `reset`: reset position and size
 - `list`: list alerts and their settings

@@ -8,7 +8,8 @@ local PREFIX = "|cff8888ffRemindMe|r: "
 
 local defaults = {
     point = { "CENTER", "CENTER", 0, 150 },
-    iconSize = 64,
+    iconSize = 64,      -- used when not matching the Cooldown Manager
+    matchCooldownManager = true,
     sound = true,
     alerts = {}, -- per-alert settings, filled from each alert's own defaults
 }
@@ -135,8 +136,35 @@ anchor.label = anchor:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
 anchor.label:SetPoint("BOTTOM", anchor, "TOP", 0, 2)
 anchor.label:SetText("RemindMe: drag me, then /rmf lock")
 
+-- Size of one Cooldown Manager icon, in UIParent units, or nil if there is none.
+local VIEWERS = { "EssentialCooldownViewer", "UtilityCooldownViewer", "BuffIconCooldownViewer" }
+local function CooldownManagerIconSize()
+    local parentScale = UIParent:GetEffectiveScale()
+    for _, name in ipairs(VIEWERS) do
+        local viewer = _G[name]
+        if viewer and viewer.GetChildren then
+            for _, child in ipairs({ viewer:GetChildren() }) do
+                local w = child.Icon and child:GetWidth()
+                if w and w > 1 then
+                    return math.floor(w * child:GetEffectiveScale() / parentScale + 0.5)
+                end
+            end
+        end
+    end
+end
+
+local currentSize = 64
+local function IconSize()
+    if db.matchCooldownManager then
+        local s = CooldownManagerIconSize()
+        if s then return s end
+    end
+    return db.iconSize
+end
+
 local function ApplyLayout()
-    local size = db.iconSize
+    currentSize = IconSize()
+    local size = currentSize
     anchor:SetSize(size, size)
     anchor:ClearAllPoints()
     local p = db.point
@@ -166,12 +194,12 @@ local function CreateIcon(alert)
 
     f.hotkey = f:CreateFontString(nil, "OVERLAY")
     f.hotkey:SetPoint("TOPRIGHT", f, "TOPRIGHT", -2, -3)
-    f.hotkey:SetFont(STANDARD_TEXT_FONT, math.max(10, math.floor(db.iconSize * 0.28)), "OUTLINE")
+    f.hotkey:SetFont(STANDARD_TEXT_FONT, math.max(10, math.floor(currentSize * 0.28)), "OUTLINE")
     f.hotkey:SetTextColor(0.9, 0.9, 0.9)
 
     f.text = f:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     f.text:SetPoint("TOP", f, "BOTTOM", 0, -4)
-    f:SetSize(db.iconSize, db.iconSize)
+    f:SetSize(currentSize, currentSize)
 
     local ag = f:CreateAnimationGroup()
     ag:SetLooping("BOUNCE")
@@ -197,7 +225,9 @@ local function Evaluate()
     local now = GetTime()
     local testing = unlocked or now < testUntil
     local shown = 0
-    local size, gap = db.iconSize, 8
+    if IconSize() ~= currentSize then ApplyLayout() end
+    local size = currentSize
+    local gap = math.max(2, math.floor(size * 0.1 + 0.5))
 
     for _, alert in ipairs(ns.alerts) do
         local settings = db.alerts[alert.key]
@@ -308,7 +338,8 @@ local function Help()
     Print("commands (/rmf or /remindme):")
     Print("  unlock | lock  - move the icon position")
     Print("  test           - show every alert icon for 5 seconds")
-    Print("  size <24-200>  - icon size")
+    Print("  size match     - same size as Cooldown Manager icons (default)")
+    Print("  size <16-200>  - fixed icon size")
     Print("  sound on|off   - play a sound when an icon appears")
     Print("  reset          - reset position and size")
     Print("  list           - list alerts and their settings")
@@ -335,13 +366,23 @@ SlashCmdList.REMINDMEFOREVER = function(msg)
         C_Timer.After(5.1, Evaluate)
     elseif cmd == "size" then
         local n = tonumber(rest)
-        if n and n >= 24 and n <= 200 then
-            db.iconSize = math.floor(n)
+        if rest:lower() == "match" then
+            db.matchCooldownManager = true
             ApplyLayout()
             Evaluate()
-            Print("icon size " .. db.iconSize .. ".")
+            if CooldownManagerIconSize() then
+                Print("matching Cooldown Manager icon size (" .. currentSize .. ").")
+            else
+                Print("will match the Cooldown Manager once its icons exist; using " .. currentSize .. " for now.")
+            end
+        elseif n and n >= 16 and n <= 200 then
+            db.iconSize = math.floor(n)
+            db.matchCooldownManager = false
+            ApplyLayout()
+            Evaluate()
+            Print("icon size " .. db.iconSize .. " (no longer matching Cooldown Manager).")
         else
-            Print("usage: /rmf size <24-200>")
+            Print("usage: /rmf size <16-200> | match")
         end
     elseif cmd == "sound" then
         if rest == "on" or rest == "off" then
@@ -353,6 +394,7 @@ SlashCmdList.REMINDMEFOREVER = function(msg)
     elseif cmd == "reset" then
         db.point = { unpack(defaults.point) }
         db.iconSize = defaults.iconSize
+        db.matchCooldownManager = true
         ApplyLayout()
         Evaluate()
         Print("position and size reset.")
